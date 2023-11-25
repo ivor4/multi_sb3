@@ -366,6 +366,8 @@ class OffPolicyAlgorithm(BaseAlgorithm):
             tb_log_name,
             progress_bar,
         )
+        
+        callback.on_training_start(locals(), globals())
 
         assert self.env is not None, "You must set the environment before calling learn()"
         assert isinstance(self.train_freq, TrainFreq)  # check done in _setup_learn()

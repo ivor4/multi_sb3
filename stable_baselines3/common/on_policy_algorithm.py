@@ -301,6 +301,66 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         callback.on_training_end()
 
         return self
+    
+    def stepped_learn_start(
+        self: SelfOnPolicyAlgorithm,
+        total_timesteps: int,
+        callback: MaybeCallback = None,
+        log_interval: int = 1,
+        tb_log_name: str = "OnPolicyAlgorithm",
+        reset_num_timesteps: bool = True,
+        progress_bar: bool = False,
+    ) -> (SelfOnPolicyAlgorithm, MaybeCallback):
+        
+
+        total_timesteps, callback = self._setup_learn(
+            total_timesteps,
+            callback,
+            reset_num_timesteps,
+            tb_log_name,
+            progress_bar,
+        )
+
+        callback.on_training_start(locals(), globals())
+
+        assert self.env is not None
+        
+        self.stepped_learn_iteration = 0
+        self.stepped_learn_log_interval = log_interval
+
+        return self, callback
+    
+    def stepped_learn(
+        self: SelfOnPolicyAlgorithm,
+        callback: MaybeCallback
+    ) -> None:
+        self.collect_rollouts(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)
+
+
+        self.stepped_learn_iteration += 1
+        self._update_current_progress_remaining(self.num_timesteps, self._total_timesteps)
+
+        # Display training infos
+        if self.stepped_learn_log_interval is not None and self.stepped_learn_iteration % self.stepped_learn_log_interval == 0:
+            assert self.ep_info_buffer is not None
+            time_elapsed = max((time.time_ns() - self.start_time) / 1e9, sys.float_info.epsilon)
+            fps = int((self.num_timesteps - self._num_timesteps_at_start) / time_elapsed)
+            self.logger.record("time/iterations", self.stepped_learn_iteration, exclude="tensorboard")
+            if len(self.ep_info_buffer) > 0 and len(self.ep_info_buffer[0]) > 0:
+                self.logger.record("rollout/ep_rew_mean", safe_mean([ep_info["r"] for ep_info in self.ep_info_buffer]))
+                self.logger.record("rollout/ep_len_mean", safe_mean([ep_info["l"] for ep_info in self.ep_info_buffer]))
+            self.logger.record("time/fps", fps)
+            self.logger.record("time/time_elapsed", int(time_elapsed), exclude="tensorboard")
+            self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
+            self.logger.dump(step=self.num_timesteps)
+
+        self.train()
+        
+    def stepped_learn_end(
+        self:SelfOnPolicyAlgorithm,
+        callback: MaybeCallback
+    ) -> None:
+        callback.on_training_end()
 
     def _get_torch_save_params(self) -> Tuple[List[str], List[str]]:
         state_dicts = ["policy", "policy.optimizer"]

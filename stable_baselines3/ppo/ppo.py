@@ -320,3 +320,33 @@ class PPO(OnPolicyAlgorithm):
             reset_num_timesteps=reset_num_timesteps,
             progress_bar=progress_bar,
         )
+    
+    def stepped_learn_start(
+        self: SelfPPO,
+        total_timesteps: int,
+        callback: MaybeCallback = None,
+        log_interval: int = 1,
+        tb_log_name: str = "PPO",
+        reset_num_timesteps: bool = True,
+        progress_bar: bool = False,
+    ) -> SelfPPO:
+        return super().stepped_learn_start(
+            total_timesteps=total_timesteps,
+            callback=callback,
+            log_interval=log_interval,
+            tb_log_name=tb_log_name,
+            reset_num_timesteps=reset_num_timesteps,
+            progress_bar=progress_bar,
+        )
+    
+    def stepped_learn(
+        self: SelfPPO,
+        callback: MaybeCallback
+    ) -> None:
+        super().stepped_learn(callback)
+        
+    def stepped_learn_end(
+        self: SelfPPO,
+        callback: MaybeCallback
+    ) -> None:
+        super().stepped_learn_end(callback)
