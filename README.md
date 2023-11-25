@@ -1,3 +1,14 @@
+# Multi Stable Baselines 3
+
+Experimental version of Stable Baslines3 which expands SB3 2.2.1 to be able to define a multi algorithm training.
+Usage will be based on defer actions, observation space and rewards between its inner algorithms (PPO, DQN, SAC...).
+It is thought for projects which may rely on different strategies for different actions with a focused training.
+
+
+
+
+#--- FORKED REPO (Stable Baselines3), original README.MD from stable-baselines3 ---
+
 <img src="docs/\_static/img/logo.png" align="right" width="40%"/>
 
 <!-- [![pipeline status](https://gitlab.com/araffin/stable-baselines3/badges/master/pipeline.svg)](https://gitlab.com/araffin/stable-baselines3/-/commits/master) -->

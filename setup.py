@@ -7,12 +7,18 @@ with open(os.path.join("stable_baselines3", "version.txt")) as file_handler:
 
 
 long_description = """
+# Multi Stable Baselines3
+Experimental version of Stable Baslines3 which expands SB3 2.2.1 to be able to define a multi algorithm training.
+Usage will be based on defer actions, observation space and rewards between its inner algorithms (PPO, DQN, SAC...).
+It is thought for projects which may rely on different strategies for different actions with an intensive focused training. 
+
 
 # Stable Baselines3
 
 Stable Baselines3 is a set of reliable implementations of reinforcement learning algorithms in PyTorch. It is the next major version of [Stable Baselines](https://github.com/hill-a/stable-baselines).
 
 These algorithms will make it easier for the research community and industry to replicate, refine, and identify new ideas, and will create good baselines to build projects on top of. We expect these tools will be used as a base around which new ideas can be added, and as a tool for comparing a new approach against existing ones. We also hope that the simplicity of these tools will allow beginners to experiment with a more advanced toolset, without being buried in implementation details.
+
 
 
 ## Links

@@ -272,6 +272,36 @@ class DQN(OffPolicyAlgorithm):
             reset_num_timesteps=reset_num_timesteps,
             progress_bar=progress_bar,
         )
+    
+    def stepped_learn_start(
+            self: SelfDQN,
+            total_timesteps: int,
+            callback: MaybeCallback = None,
+            log_interval: int = 4,
+            tb_log_name: str = "DQN",
+            reset_num_timesteps: bool = True,
+            progress_bar: bool = False,
+    ) -> SelfDQN:
+        return super().stepped_learn_start(
+            total_timesteps=total_timesteps,
+            callback=callback,
+            log_interval=log_interval,
+            tb_log_name=tb_log_name,
+            reset_num_timesteps=reset_num_timesteps,
+            progress_bar=progress_bar,
+        )
+    
+    def stepped_learn(
+            self: SelfDQN,
+            callback: MaybeCallback
+    ) -> None:
+        super().stepped_learn(callback)
+        
+    def stepped_learn_end(
+            self: SelfDQN,
+            callback: MaybeCallback
+    ) -> None:
+        super().stepped_learn_end(callback)
 
     def _excluded_save_params(self) -> List[str]:
         return [*super()._excluded_save_params(), "q_net", "q_net_target"]
