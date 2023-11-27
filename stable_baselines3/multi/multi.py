@@ -95,7 +95,7 @@ class MSB3_VirtualEnv(Env):
     
     def reset(
         self: SelfMSB3_Venv,
-        seed:float = None 
+        seed:int|None = None 
         ) -> None:
         """
         Emulates reset order, this can be retrieved inside external Env and process it with getLastActions
