@@ -339,11 +339,17 @@ class PPO(OnPolicyAlgorithm):
             progress_bar=progress_bar,
         )
     
-    def stepped_learn(
+    def stepped_learn_send(
         self: SelfPPO,
         callback: MaybeCallback
     ) -> None:
-        super().stepped_learn(callback)
+        super().stepped_learn_send(callback)
+        
+    def stepped_learn_receive(
+        self: SelfPPO,
+        callback: MaybeCallback
+    ) -> None:
+        super().stepped_learn_receive(callback)
         
     def stepped_learn_end(
         self: SelfPPO,

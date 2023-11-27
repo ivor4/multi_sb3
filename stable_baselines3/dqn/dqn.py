@@ -291,11 +291,17 @@ class DQN(OffPolicyAlgorithm):
             progress_bar=progress_bar,
         )
     
-    def stepped_learn(
+    def stepped_learn_send(
             self: SelfDQN,
             callback: MaybeCallback
     ) -> None:
-        super().stepped_learn(callback)
+        super().stepped_learn_send(callback)
+        
+    def stepped_learn_receive(
+            self: SelfDQN,
+            callback: MaybeCallback
+    ) -> None:
+        super().stepped_learn_receive(callback)
         
     def stepped_learn_end(
             self: SelfDQN,

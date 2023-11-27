@@ -375,16 +375,41 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         self.stepped_learn_log_interval = log_interval
         self.stepped_learn_rollout_steps = 0
         self.stepped_learn_rollout_episodes = 0
-        self.stepped_learn_ping_phase = True
+        self.stepped_learn_buffered_actions = None
         
         return self, callback
     
-    def stepped_learn(
+    def stepped_learn_send(
         self: SelfOffPolicyAlgorithm,
         callback: MaybeCallback
     ) -> None:
+        """
+        Send part (first) of stepped learn. At this point env retrieves desired action from algorithm.
+        Then, main environment gathers all action from this and other algorithms and processes step.
+        Then lets virtual environment with new receive data
+        :param callback: Callback
+        """
+        self.collect_stepped_rollouts_send(
+            self.env,
+            train_freq=self.train_freq,
+            action_noise=self.action_noise,
+            callback=callback,
+            learning_starts=self.learning_starts,
+            replay_buffer=self.replay_buffer,
+            log_interval=self.stepped_learn_log_interval,
+        )
+    
+    def stepped_learn_receive(
+        self: SelfOffPolicyAlgorithm,
+        callback: MaybeCallback        
+    ) -> None:
+        """
+        Receive part (second) of stepped learn. At this point, env has observation space, rewards, done and trimmed
+        data ready to be retrieved for rollout process
+        :param callback: Callback
 
-        rollout = self.collect_stepped_rollouts(
+        """
+        rollout = self.collect_stepped_rollouts_receive(
             self.env,
             train_freq=self.train_freq,
             action_noise=self.action_noise,
@@ -394,11 +419,13 @@ class OffPolicyAlgorithm(BaseAlgorithm):
             log_interval=self.stepped_learn_log_interval,
         )
         
+        # Set to None, to ensure it is rewritten in next cycle and not reused (Just to ensure cycle is done correctly)
+        self.stepped_learn_buffered_actions = None
+        
         #Continue training is used to flag finalization of a full rollout (several steps)
         if(not rollout.continue_training):
             self.stepped_learn_rollout_episodes = 0
             self.stepped_learn_rollout_steps = 0
-            self.stepped_learn_ping_phase = True
 
             if self.num_timesteps > 0 and self.num_timesteps > self.learning_starts:
                 # If no `gradient_steps` is specified,
@@ -666,7 +693,69 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         return RolloutReturn(num_collected_steps * env.num_envs, num_collected_episodes, continue_training)
     
     
-    def collect_stepped_rollouts(
+    def collect_stepped_rollouts_send(
+        self,
+        env: VecEnv,
+        callback: BaseCallback,
+        train_freq: TrainFreq,
+        replay_buffer: ReplayBuffer,
+        action_noise: Optional[ActionNoise] = None,
+        learning_starts: int = 0,
+        log_interval: Optional[int] = None,
+    ) -> RolloutReturn:
+        """
+        Multi SB3 adaption (only one env step per cycle, but respecting rollout steps) of:
+        
+        Collect experiences and store them into a ``ReplayBuffer``.
+
+        :param env: The training environment
+        :param callback: Callback that will be called at each step
+            (and at the beginning and end of the rollout)
+        :param train_freq: How much experience to collect
+            by doing rollouts of current policy.
+            Either ``TrainFreq(<n>, TrainFrequencyUnit.STEP)``
+            or ``TrainFreq(<n>, TrainFrequencyUnit.EPISODE)``
+            with ``<n>`` being an integer greater than 0.
+        :param action_noise: Action noise that will be used for exploration
+            Required for deterministic policy (e.g. TD3). This can also be used
+            in addition to the stochastic policy for SAC.
+        :param learning_starts: Number of steps before learning for the warm-up phase.
+        :param replay_buffer:
+        :param log_interval: Log data every ``log_interval`` episodes
+        :return:
+        """
+        
+        if(self.stepped_learn_rollout_steps == 0):
+            # Switch to eval mode (this affects batch norm / dropout)
+            self.policy.set_training_mode(False)
+    
+            assert isinstance(env, VecEnv), "You must pass a VecEnv"
+            assert train_freq.frequency > 0, "Should at least collect one step or episode."
+    
+            if env.num_envs > 1:
+                assert train_freq.unit == TrainFrequencyUnit.STEP, "You must use only one env when doing episodic training."
+    
+            if self.use_sde:
+                self.actor.reset_noise(env.num_envs)
+    
+            callback.on_rollout_start()
+            
+            
+        if should_collect_more_steps(train_freq, self.stepped_learn_rollout_steps, self.stepped_learn_rollout_episodes):
+            if self.use_sde and self.sde_sample_freq > 0 and self.stepped_learn_rollout_steps % self.sde_sample_freq == 0:
+                # Sample a new noise matrix
+                self.actor.reset_noise(env.num_envs)
+            
+    
+            # Select action randomly or according to policy
+            actions, self.stepped_learn_buffered_actions = self._sample_action(learning_starts, action_noise, env.num_envs)
+            
+            # Ping phase, it is only important actions. When this function is called again in
+            # Next semi step, then returns will take importance
+            _, _, _, _ = env.step(actions)
+            
+    
+    def collect_stepped_rollouts_receive(
         self,
         env: VecEnv,
         callback: BaseCallback,
@@ -698,79 +787,47 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         :return:
         """
         continue_training = True
-        
-        if(self.stepped_learn_rollout_steps == 0):
-            # Switch to eval mode (this affects batch norm / dropout)
-            self.policy.set_training_mode(False)
-    
-            assert isinstance(env, VecEnv), "You must pass a VecEnv"
-            assert train_freq.frequency > 0, "Should at least collect one step or episode."
-    
-            if env.num_envs > 1:
-                assert train_freq.unit == TrainFrequencyUnit.STEP, "You must use only one env when doing episodic training."
-    
-            if self.use_sde:
-                self.actor.reset_noise(env.num_envs)
-    
-            callback.on_rollout_start()
-            
             
         if should_collect_more_steps(train_freq, self.stepped_learn_rollout_steps, self.stepped_learn_rollout_episodes):
-            if(self.stepped_learn_ping_phase):
-                if self.use_sde and self.sde_sample_freq > 0 and self.stepped_learn_rollout_steps % self.sde_sample_freq == 0:
-                    # Sample a new noise matrix
-                    self.actor.reset_noise(env.num_envs)
-                
-
-                # Select action randomly or according to policy
-                actions, buffer_actions = self._sample_action(learning_starts, action_noise, env.num_envs)
-                
-                # Ping phase, it is only important actions. When this function is called again in
-                # Next semi step, then returns will take importance
-                _, _, _, _ = env.step(actions)
-                self.stepped_learn_ping_phase = False
-            else:
-                # Pong phase, it is only important returns
-                # Rescale and perform action
-                new_obs, rewards, dones, infos = env.step(actions)
-                self.stepped_learn_ping_phase = True
+            # Pong phase, it is only important returns, action is discarded, or stored for nothing
+            new_obs, rewards, dones, infos = env.step([])
     
-                self.num_timesteps += env.num_envs
-                self.stepped_learn_rollout_steps += 1
+            self.num_timesteps += env.num_envs
+            self.stepped_learn_rollout_steps += 1
     
-                # Give access to local variables
-                callback.update_locals(locals())
-                # Only stop training if return value is False, not when it is None.
-                if not callback.on_step():
-                    return RolloutReturn(self.stepped_learn_rollout_steps * env.num_envs, self.stepped_learn_rollout_episodes, continue_training=False)
+            # Give access to local variables
+            callback.update_locals(locals())
+            # Only stop training if return value is False, not when it is None.
+            if not callback.on_step():
+                return RolloutReturn(self.stepped_learn_rollout_steps * env.num_envs, self.stepped_learn_rollout_episodes, continue_training=False)
     
-                # Retrieve reward and episode length if using Monitor wrapper
-                self._update_info_buffer(infos, dones)
+            # Retrieve reward and episode length if using Monitor wrapper
+            self._update_info_buffer(infos, dones)
     
-                # Store data in replay buffer (normalized action and unnormalized observation)
-                self._store_transition(replay_buffer, buffer_actions, new_obs, rewards, dones, infos)  # type: ignore[arg-type]
+            # Store data in replay buffer (normalized action and unnormalized observation)
+            self._store_transition(replay_buffer, self.stepped_learn_buffered_actions, new_obs, rewards, dones, infos)  # type: ignore[arg-type]
     
-                self._update_current_progress_remaining(self.num_timesteps, self._total_timesteps)
+            self._update_current_progress_remaining(self.num_timesteps, self._total_timesteps)
     
-                # For DQN, check if the target network should be updated
-                # and update the exploration schedule
-                # For SAC/TD3, the update is dones as the same time as the gradient update
-                # see https://github.com/hill-a/stable-baselines/issues/900
-                self._on_step()
+            # For DQN, check if the target network should be updated
+            # and update the exploration schedule
+            # For SAC/TD3, the update is dones as the same time as the gradient update
+            # see https://github.com/hill-a/stable-baselines/issues/900
+            self._on_step()
     
-                for idx, done in enumerate(dones):
-                    if done:
-                        # Update stats
-                        self.stepped_learn_rollout_episodes += 1
-                        self._episode_num += 1
+            for idx, done in enumerate(dones):
+                if done:
+                    # Update stats
+                    self.stepped_learn_rollout_episodes += 1
+                    self._episode_num += 1
     
-                        if action_noise is not None:
-                            kwargs = dict(indices=[idx]) if env.num_envs > 1 else {}
-                            action_noise.reset(**kwargs)
+                    if action_noise is not None:
+                        kwargs = dict(indices=[idx]) if env.num_envs > 1 else {}
+                        action_noise.reset(**kwargs)
     
-                        # Log training infos
-                        if log_interval is not None and self._episode_num % log_interval == 0:
-                            self._dump_logs()
+                    # Log training infos
+                    if log_interval is not None and self._episode_num % log_interval == 0:
+                        self._dump_logs()
                         
         if(not should_collect_more_steps(train_freq, self.stepped_learn_rollout_steps, self.stepped_learn_rollout_episodes)):
             callback.on_rollout_end()
