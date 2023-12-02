@@ -10,7 +10,7 @@ from torch.nn import functional as F
 
 from typing import Any, ClassVar, Dict, Optional, Type, TypeVar, Union, Callable
 
-from stable_baselines3.common import BaseAlgorithm
+from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.buffers import ReplayBuffer
 from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
 from stable_baselines3.common.policies import BasePolicy
@@ -64,7 +64,8 @@ class MSB3_VirtualEnv(Env):
         )->None:
         """
         Prepares next step with selected params for associated algorithm.
-        Obs, reward, done, trimmed, info which will be retrieved in designed algorithm policy rollout cycle
+        Obs, reward, done, trimmed, info which will be retrieved in designed algorithm policy rollout cycle.
+        
         :param next_obs: Next obsevation matrix, box, array or space which was defined
         :param next_reward: Next reward specially designed for designed algorithm learning
         :param next_done: Next done boolean telling chapter was ended in real environment
@@ -84,14 +85,16 @@ class MSB3_VirtualEnv(Env):
         
     def getLastActions(
         self: SelfMSB3_Venv
-        ) -> (List[int], bool):
+        ) -> (List[int], bool, bool):
         """
         Gets last actions which step was called last time
         """
         next_reset = self.next_reset
+        next_close = self.next_close
         self.next_reset = False
+        self.next_close = False
         
-        return self.next_actions, next_reset
+        return self.next_actions, next_reset, next_close
     
     def reset(
         self: SelfMSB3_Venv,
@@ -99,6 +102,7 @@ class MSB3_VirtualEnv(Env):
         ) -> None:
         """
         Emulates reset order, this can be retrieved inside external Env and process it with getLastActions
+        
         :param seed: Random Seed [Optional]
         """
         super().reset(seed=seed)
@@ -141,7 +145,7 @@ class MSB3_VirtualEnv(Env):
         self.next_close = True
 
 
-class MultiSB3:
+class MultiSB3(BaseAlgorithm):
         """
         Multi Algorithm from SB3. This class wraps all inner classes contained in alg_collection.
         Distribution of Observation, Rewards, and Actions will be decided on their three associated keys.
@@ -150,12 +154,37 @@ class MultiSB3:
         may be segmented for different uses, and actions are always expected as MultiBinary, therefore
         an algorithm could cope with one ore more actions.
         """
+        @classmethod
+        def createVirtualEnvironments(
+                cls,
+                numAlgorithms:int,
+                observationSpaceList: List[Space],
+                actionSpaceList: List[Space]
+        ) -> List[SelfMSB3_Venv]:
+            """
+            Creates a list of virtual environments prepared for given observation and action spaces.
+            Algorithms should be created/assigned with given Virtual environment, according to its order.
+            :param numAlgorithms: Number of involved algorithms (does not matter type)
+            :param observationSpaceList: List of Observation spaces ordered for algorithms
+            :param actionSpaceList: List of Action spaces ordered for algorithms
+            """
+            retEnviornments = []
+            
+            for i in range(numAlgorithms):
+                newVenv = MSB3_VirtualEnv(observationSpaceList[i], actionSpaceList[i])
+                retEnviornments.append(newVenv)
+
+            return retEnviornments
+        
         def __init__(
             self,
             env: Union[GymEnv, str],
-            alg_collection: List[Dict[BaseAlgorithm,int,int,List[bool]]]
+            alg_collection: List[Dict],
+            virtual_env_list: List[SelfMSB3_Venv]
         ):
             """
+            Initializes multi algorithm.
+            
             :param env: The environment to learn from (if registered in Gym, can be str)
             :param alg_collection: List of involved parameters in training. It is expected a dictionary with 4 keys:
             'alg': Algorithm (PPO, SAC, DQN, ...) which must have been previously initialized with desired parameters
@@ -163,8 +192,69 @@ class MultiSB3:
             one is available, choose always 0
             'reward_index': Index from rewards wrapping array to destinate for given algorithm. In case only
             one is available, choose always 0
-            'action_indexes': Boolean list [size of action_space] to indicate algorithm controlls given action/actions
+            'action_indexes': List of indexes of actions which will be taken by algorithm from action_space
             according to action_space which MUST be MultiBinary.
+            :param virtual_env_list: Previously created Virtual environment list with class method
+            
             """
-            pass
+            assert isinstance(env.action_space, spaces.MultiBinary), 'Action space must be MultiBinary'
+            assert (len(virtual_env_list) == len(alg_collection)), 'Virtual environment list size does not match algorithm list size'
+            
+            total_actions = env.action_space.shape[0]
+            mask_total_actions = (int)((2**total_actions) - 1)
+            observed_action_mask = (int)(0x0)
+            
+            for alg in alg_collection:
+                alg_action_list = alg.action_indexes
+                for i in alg_action_list:
+                    prev_observed = observed_action_mask
+                    observed_action_mask |= 1 << i
+                    assert observed_action_mask != prev_observed, 'Some action is repeated or shared between algorithms'
+                        
+            assert observed_action_mask == mask_total_actions, 'Some action was not covered by algorithms'
+            
+            # Create a local copy of given input
+            self.alg_collection = alg_collection.copy()
+            
+        def learn(
+            self: SelfMSB3,
+            total_timesteps: int,
+            callback: MaybeCallback = None,
+            callback_alg: List[MaybeCallback] = None,
+            log_interval: int = 4,
+            tb_log_name: str = "Multi",
+            reset_num_timesteps: bool = True,
+            progress_bar: bool = False,
+        )-> None:
+            """
+            Starts and completes whole learning process as if it was an individual algorithm.
+            It iterates every cycle from real environment and feeding virtual environments.
+            Each algorithm has only its relevant information and action range through steps.
+
+            :param total_timesteps: Total timesteps taken from real environment
+            :callback: (Optional, otherwise None)
+            :callback_alg: (Optional, otherwise None). List of callbacks linked at rigurous order
+            at which algorithms were declared on __init__. Single not interesting callbacks
+            can be set to [None]
+            :log_interval: Same as single algorithms
+            :tb_log_name: Name for multi algorithm log
+            :reset_num_timesteps: Same as single algorithms
+            :progress_bar: Same as signel algorithms
+
+            """
+            if(callback_alg is None):
+                callback_alg = [None]*len(self.alg_collection)
+            elif(isinstance(callback_alg, list)):
+                assert len(callback_alg) == len(self.alg_collection), 'Callback list does not match algorithm list size'
+            else:
+                assert False, 'Given callback list is not a list'
+                
+            for i in len(self.alg_collection):
+                self.alg_collection[i].alg.stepped_learn_start(
+                    total_timesteps, callback_alg[i], log_interval, tb_log_name+str(i), reset_num_timesteps, progress_bar)
+            
+            # Create eval callback if needed
+            callback = self._init_callback(callback, progress_bar)
+            
+            callback.on_training_start(locals(), globals())
         

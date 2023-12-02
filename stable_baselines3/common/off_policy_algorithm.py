@@ -720,7 +720,7 @@ class OffPolicyAlgorithm(BaseAlgorithm):
             Required for deterministic policy (e.g. TD3). This can also be used
             in addition to the stochastic policy for SAC.
         :param learning_starts: Number of steps before learning for the warm-up phase.
-        :param replay_buffer:
+        :param replay_buffer: Same as original
         :param log_interval: Log data every ``log_interval`` episodes
         :return:
         """
@@ -782,9 +782,9 @@ class OffPolicyAlgorithm(BaseAlgorithm):
             Required for deterministic policy (e.g. TD3). This can also be used
             in addition to the stochastic policy for SAC.
         :param learning_starts: Number of steps before learning for the warm-up phase.
-        :param replay_buffer:
+        :param replay_buffer: Same as original
         :param log_interval: Log data every ``log_interval`` episodes
-        :return:
+        :return: Rollout info
         """
         continue_training = True
             

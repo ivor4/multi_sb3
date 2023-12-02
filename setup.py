@@ -142,9 +142,9 @@ setup(
         "extra": extra_packages,
         "extra_no_roms": extra_no_roms,
     },
-    description="Pytorch version of Stable Baselines, implementations of reinforcement learning algorithms.",
-    author="Antonin Raffin",
-    url="https://github.com/DLR-RM/stable-baselines3",
+    description="Expanded version Stable Baselines, implementations of reinforcement learning algorithms with multi algorithm capability.",
+    author="Antonin Raffin (Stable Baselines), Jaime Bonache (MultiSB3 expansion)",
+    url="https://github.com/ivor4/multi_sb3",
     author_email="antonin.raffin@dlr.de",
     keywords="reinforcement-learning-algorithms reinforcement-learning machine-learning "
     "gymnasium gym openai stable baselines toolbox python data-science",
@@ -155,7 +155,8 @@ setup(
     python_requires=">=3.8",
     # PyPI package information.
     project_urls={
-        "Code": "https://github.com/DLR-RM/stable-baselines3",
+        "Multi SB3 expansion Code": "https://github.com/ivor4/multi_sb3",
+        "Stable Baselines Code": "https://github.com/DLR-RM/stable-baselines3",
         "Documentation": "https://stable-baselines3.readthedocs.io/",
         "Changelog": "https://stable-baselines3.readthedocs.io/en/master/misc/changelog.html",
         "SB3-Contrib": "https://github.com/Stable-Baselines-Team/stable-baselines3-contrib",
