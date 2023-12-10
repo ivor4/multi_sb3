@@ -6,6 +6,7 @@ import torch as th
 from gymnasium import Env
 from gymnasium import spaces
 from gymnasium.spaces import Space
+from gymnasium.spaces import Discrete, MultiBinary
 from torch.nn import functional as F
 
 from typing import Any, ClassVar, Dict, Optional, Type, TypeVar, Union, Callable
@@ -41,9 +42,9 @@ class MSB3_VirtualEnv(Env):
         self.observation_space = observation_space
         self.action_space = action_space
         
-        self.next_step_obs = np.zeros(1)
+        self.next_step_obs = None
         self.next_reward = 0
-        self.next_actions = np.zeros(1)
+        self.next_actions = None
         self.next_reset = False
         self.next_close = False
         self.next_done = False
@@ -110,6 +111,16 @@ class MSB3_VirtualEnv(Env):
         self.next_reset = True
         
         return self.next_step_obs, self.next_info
+    
+    def clearReset(
+        self: SelfMSB3_Venv,
+        ) -> None:
+        """
+        Clears reset order given from algorithm
+
+        """
+        self.next_reset = False
+        self.next_close = False
         
     def render(
         self: SelfMSB3_Venv,
@@ -193,19 +204,35 @@ class MultiSB3(BaseAlgorithm):
             'reward_index': Index from rewards wrapping array to destinate for given algorithm. In case only
             one is available, choose always 0
             'action_indexes': List of indexes of actions which will be taken by algorithm from action_space
+            'action_space': Action space associated to algorithm. Can be MultiBinary or Discrete
             according to action_space which MUST be MultiBinary.
             :param virtual_env_list: Previously created Virtual environment list with class method
             
             """
+            alg_collection_size = len(alg_collection)
             assert isinstance(env.action_space, spaces.MultiBinary), 'Action space must be MultiBinary'
-            assert (len(virtual_env_list) == len(alg_collection)), 'Virtual environment list size does not match algorithm list size'
+            assert (len(virtual_env_list) == alg_collection_size), 'Virtual environment list size does not match algorithm list size'
             
             total_actions = env.action_space.shape[0]
-            mask_total_actions = (int)((2**total_actions) - 1)
-            observed_action_mask = (int)(0x0)
+            mask_total_actions = int((2**total_actions) - 1)
+            observed_action_mask = int(0x0)
             
-            for alg in alg_collection:
-                alg_action_list = alg.action_indexes
+            alg_collection = alg_collection.copy()
+            
+            for alg_index in range(alg_collection_size):
+                alg = alg_collection[alg_index]
+                
+                if(isinstance(alg['action_space'], Discrete)):
+                    discrete = True
+                elif(isinstance(alg['action_space'], MultiBinary)):
+                    discrete = False
+                else:
+                    raise Exception('Action space should be Discrete or MultiBinary')
+                    
+                alg['discrete'] = discrete
+                alg_action_list = alg['action_indexes']
+                alg['action_indexes_range'] = range(len(alg_action_list))
+                
                 for i in alg_action_list:
                     prev_observed = observed_action_mask
                     observed_action_mask |= 1 << i
@@ -214,7 +241,12 @@ class MultiSB3(BaseAlgorithm):
             assert observed_action_mask == mask_total_actions, 'Some action was not covered by algorithms'
             
             # Create a local copy of given input
-            self.alg_collection = alg_collection.copy()
+            self.env : Env = env
+            self.venv_list : List[MSB3_VirtualEnv] = virtual_env_list
+            self.alg_collection = alg_collection
+            self.total_actions : int = total_actions
+            self.action_multibinary = [False] * total_actions
+            self.no_reward = [0] * alg_collection_size
             
         def learn(
             self: SelfMSB3,
@@ -242,19 +274,107 @@ class MultiSB3(BaseAlgorithm):
             :progress_bar: Same as signel algorithms
 
             """
+            
+            alg_collection_size = len(self.alg_collection)
+            # Initial per-algorithm-custom-callback check
             if(callback_alg is None):
-                callback_alg = [None]*len(self.alg_collection)
+                callback_alg = [None]*alg_collection_size
             elif(isinstance(callback_alg, list)):
-                assert len(callback_alg) == len(self.alg_collection), 'Callback list does not match algorithm list size'
+                assert len(callback_alg) == alg_collection_size, 'Callback list does not match algorithm list size'
             else:
                 assert False, 'Given callback list is not a list'
                 
-            for i in len(self.alg_collection):
-                self.alg_collection[i].alg.stepped_learn_start(
-                    total_timesteps, callback_alg[i], log_interval, tb_log_name+str(i), reset_num_timesteps, progress_bar)
+                
+            # Initial reset
+            [obs, info] = self.env.reset(None)
+            
+            # Feed with initial observation and info as a result of real environment reset
+            for alg in self.alg_collection:
+                alg.alg.env.feedNextStep(obs[alg.obs_index], 0, False, False, info)
+                
+            # Every algorithm _setup_learn initialization
+            for i in range(alg_collection_size):
+                _, callback_alg[i] = self.alg_collection[i].alg.stepped_learn_start(\
+                    total_timesteps, callback_alg[i], log_interval, tb_log_name+str(i),\
+                    reset_num_timesteps, progress_bar)
+                    
+                # Clear reset order given by algorithms when they do _setup_learn(...)
+                self.alg_collection[i].alg.env.clearReset()
+                
+                # Store callback generated by _setup_lean
+                self.alg_collection[i]['callback'] = callback_alg[i]
             
             # Create eval callback if needed
             callback = self._init_callback(callback, progress_bar)
             
+            # Start event for given main callback
             callback.on_training_start(locals(), globals())
+            
+            # Set target and step num to configured initialization
+            self.learn_step_num = 0
+            self.learn_step_total = total_timesteps
+            
+            
+            
+            # Main Loop
+            while(self.learn_step_num < self.learn_step_total):
+                
+                some_reset = False
+                some_close = False
+                
+                # Execute learn step sending from all algorithms
+                for alg in self.alg_collection:
+                    # Execute one sending step
+                    alg.alg.stepped_learn_send(alg['callback'])
+                    
+                    # Retrieve from virtual environment which action was proposed by algorithm
+                    actions, reset, close = alg.alg.env.getLastActions()
+                    
+                    # Store reset or close orders
+                    some_reset |= reset
+                    some_close |= close
+                    
+                    # Fill actions
+                    if(alg['discrete']):
+                        for action_i in alg['action_indexes_range']:
+                            action_n = alg.action_indexes[action_i]
+                            self.action_multibinary[action_n] = (actions == (1 << action_i))
+                    else:
+                        for action_i in alg['action_indexes_range']:
+                            action_n = alg.action_indexes[action_i]
+                            self.action_multibinary[action_n] = actions[action_i]
+                
+                # Commit reset in case one of all algorithms asked for it (normally when real env was done, trimmedº)
+                if(some_reset):
+                    [obs, info] = self.env.reset(None)
+                    [reward, done, trimmed] = [self.no_reward, False, False]
+                    for alg in self.alg_collection:
+                        alg.alg.env.feedNextStep(obs[alg.obs_index], reward[alg.reward_index], done, trimmed, info)
+                else:
+                    # Otherwise, do a normal step in real environment with action multibinary array filled actions
+                    [obs, reward, done, trimmed, info] = self.env.step(self.action_multibinary)
+                    for alg in self.alg_collection:
+                        alg.alg.env.feedNextStep(obs[alg.obs_index], reward[alg.reward_index], done, trimmed, info)
+                        
+                # Now it is time for receive step phase
+            
+        def saveModel(
+            self: SelfMSB3,
+            model_index: int,
+            model_path: str
+        )-> None:
+            """
+            Saves model/algorithm with given index according to given model_path
+
+            :param model_index: Index according to given algorithm list given at initialization
+            :param model_path: Full path to store model. Normally actual trained steps are specified in name
+
+
+            """
+            assert model_index < len(self.alg_collection), 'Index exceeds stored number of models/algorithms'
+            self.alg_collection[model_index].alg.model.save(model_path)
+
+            
+        def _setup_model(self) -> None:
+            pass
         
