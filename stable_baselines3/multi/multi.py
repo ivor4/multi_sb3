@@ -209,6 +209,13 @@ class MultiSB3(BaseAlgorithm):
             :param virtual_env_list: Previously created Virtual environment list with class method
             
             """
+            
+            super().__init__(
+                policy=None,
+                env=env,
+                learning_rate=0.0
+            )
+            
             alg_collection_size = len(alg_collection)
             assert isinstance(env.action_space, spaces.MultiBinary), 'Action space must be MultiBinary'
             assert (len(virtual_env_list) == alg_collection_size), 'Virtual environment list size does not match algorithm list size'
@@ -241,7 +248,6 @@ class MultiSB3(BaseAlgorithm):
             assert observed_action_mask == mask_total_actions, 'Some action was not covered by algorithms'
             
             # Create a local copy of given input
-            self.env : Env = env
             self.venv_list : List[MSB3_VirtualEnv] = virtual_env_list
             self.alg_collection = alg_collection
             self.total_actions : int = total_actions

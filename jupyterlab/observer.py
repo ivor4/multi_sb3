@@ -42,7 +42,8 @@ class Paratrooper(Env):
         self.observation_space = Box(low=0, high=255, shape=(45, 80, 1), dtype=np.uint8)
         self.action_space = MultiBinary(3)
     
-    def reset(self, seed = 0):        
+    def reset(self, seed = 0):       
+        super().reset(seed=seed)
         # Return the first frame 
         obs = [self.game.reset(seed)]
 
