@@ -45,7 +45,8 @@ class Paratrooper(Env):
     def reset(self, seed = 0):       
         super().reset(seed=seed)
         # Return the first frame 
-        obs = [self.game.reset(seed)]
+        obs = self.game.reset(seed)
+        obs = [obs]
 
         info = {}
 

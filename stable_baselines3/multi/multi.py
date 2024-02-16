@@ -10,7 +10,10 @@ from gymnasium.spaces import Discrete, MultiBinary
 from torch.nn import functional as F
 
 from typing import Any, ClassVar, Dict, Optional, Type, TypeVar, Union, Callable
-
+import time
+from collections import deque
+from stable_baselines3.common import utils
+from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.buffers import ReplayBuffer
 from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
@@ -145,7 +148,7 @@ class MSB3_VirtualEnv(Env):
         self.next_actions = actions
         
         #Return observation, reward, done, trimmed, info
-        return self.next_step_obs, self.next_done, self.next_trimmed, self.next_info
+        return self.next_step_obs, self.next_reward, self.next_done, self.next_trimmed, self.next_info
     
     def close(
         self: SelfMSB3_Venv
@@ -253,6 +256,7 @@ class MultiSB3(BaseAlgorithm):
             self.total_actions : int = total_actions
             self.action_multibinary = [False] * total_actions
             self.no_reward = [0] * alg_collection_size
+            self.pure_env = env
             
         def learn(
             self: SelfMSB3,
@@ -292,7 +296,7 @@ class MultiSB3(BaseAlgorithm):
                 
                 
             # Initial reset
-            [obs, info] = self.env.reset()
+            obs, info = self.pure_env.reset()
             
             # Feed with initial observation and info as a result of real environment reset
             for alg in self.alg_collection:                
@@ -311,7 +315,8 @@ class MultiSB3(BaseAlgorithm):
                 self.alg_collection[i]['callback'] = callback_alg[i]
             
             # Create global callback if needed
-            _, callback = self._setup_learn(total_timesteps=total_timesteps, callback = callback, progress_bar=progress_bar)
+            _, callback = self._setupCallback(total_timesteps=total_timesteps,\
+                    callback = callback, progress_bar=progress_bar)
             callback = self._init_callback(callback, progress_bar)
             
             # Start event for given main callback
@@ -358,17 +363,19 @@ class MultiSB3(BaseAlgorithm):
                             action_n = alg['action_indexes'][action_i]
                             self.action_multibinary[action_n] = actions[action_i]
                 
-                # Commit reset in case one of all algorithms asked for it (normally when real env was done, trimmedº)
+                # Commit reset in case one of all algorithms asked for it (normally when real env was done, trimmed)
                 if(some_reset):
-                    [obs, info] = self.env.reset(None)
-                    [reward, done, trimmed] = [self.no_reward, False, False]
+                    obs, info = self.env.reset(None)
+                    reward, done, trimmed = [self.no_reward, False, False]
                     for alg in self.alg_collection:
-                        alg['env'].feedNextStep(obs[alg['obs_index']], reward[alg['reward_index']], done, trimmed, info)
+                        alg['env'].feedNextStep(obs[alg['obs_index']], reward[alg['reward_index']],\
+                            done, trimmed, info)
                 else:
                     # Otherwise, do a normal step in real environment with action multibinary array filled actions
-                    [obs, reward, done, trimmed, info] = self.env.step(self.action_multibinary)
+                    obs, reward, done, trimmed, info = self.env.step(self.action_multibinary)
                     for alg in self.alg_collection:
-                        alg['env'].feedNextStep(obs[alg['obs_index']], reward[alg['reward_index']], done, trimmed, info)
+                        alg['env'].feedNextStep(obs[alg['obs_index']], reward[alg['reward_index']],\
+                            done, trimmed, info)
                         
                 # Now it is time for receive step phase
                 for alg in self.alg_collection:
@@ -384,6 +391,53 @@ class MultiSB3(BaseAlgorithm):
             callback.on_training_end()
             
             
+        def _setupCallback(
+            self: SelfMSB3,
+            total_timesteps: int,
+            callback: MaybeCallback = None,
+            reset_num_timesteps: bool = True,
+            tb_log_name: str = "run",
+            progress_bar: bool = False
+        ) -> Tuple[int, BaseCallback]:
+            """
+            Initialize different variables needed for training.
+
+            :param total_timesteps: The total number of samples (env steps) to train on
+            :param callback: Callback(s) called at every step with state of the algorithm.
+            :param reset_num_timesteps: Whether to reset or not the ``num_timesteps`` attribute
+            :param tb_log_name: the name of the run for tensorboard log
+            :param progress_bar: Display a progress bar using tqdm and rich.
+            :return: Total timesteps and callback(s)
+            """
+            self.start_time = time.time_ns()
+
+            if self.ep_info_buffer is None or reset_num_timesteps:
+                # Initialize buffers if they don't exist, or reinitialize if resetting counters
+                self.ep_info_buffer = deque(maxlen=self._stats_window_size)
+                self.ep_success_buffer = deque(maxlen=self._stats_window_size)
+
+            if self.action_noise is not None:
+                self.action_noise.reset()
+
+            if reset_num_timesteps:
+                self.num_timesteps = 0
+                self._episode_num = 0
+            else:
+                # Make sure training timesteps are ahead of the internal counter
+                total_timesteps += self.num_timesteps
+            self._total_timesteps = total_timesteps
+            self._num_timesteps_at_start = self.num_timesteps
+
+
+            # Configure logger's outputs if no logger was passed
+            if not self._custom_logger:
+                self._logger = utils.configure_logger(self.verbose, self.tensorboard_log, tb_log_name, reset_num_timesteps)
+
+            # Create eval callback if needed
+            callback = self._init_callback(callback, progress_bar)
+
+            return total_timesteps, callback
+        
         def saveModel(
             self: SelfMSB3,
             model_index: int,
