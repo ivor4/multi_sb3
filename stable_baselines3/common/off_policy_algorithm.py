@@ -750,6 +750,9 @@ class OffPolicyAlgorithm(BaseAlgorithm):
             # Select action randomly or according to policy
             actions, self.stepped_learn_buffered_actions = self._sample_action(learning_starts, action_noise, env.num_envs)
             
+            
+            self.lastUsedActions = actions
+            
             # Ping phase, it is only important actions. When this function is called again in
             # Next semi step, then returns will take importance
             _, _, _, _ = env.step(actions)
@@ -790,7 +793,7 @@ class OffPolicyAlgorithm(BaseAlgorithm):
             
         if should_collect_more_steps(train_freq, self.stepped_learn_rollout_steps, self.stepped_learn_rollout_episodes):
             # Pong phase, it is only important returns, action is discarded, or stored for nothing
-            new_obs, rewards, dones, infos = env.step([])
+            new_obs, rewards, dones, infos = env.step(self.lastUsedActions)
     
             self.num_timesteps += env.num_envs
             self.stepped_learn_rollout_steps += 1

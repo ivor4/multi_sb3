@@ -322,6 +322,7 @@ class MultiSB3(BaseAlgorithm):
             # Start event for given main callback
             callback.on_training_start(locals(), globals())
             
+            
             # Set target and step num to configured initialization
             self.learn_step_num = 0
             self.learn_step_total = total_timesteps
@@ -365,24 +366,26 @@ class MultiSB3(BaseAlgorithm):
                 
                 # Commit reset in case one of all algorithms asked for it (normally when real env was done, trimmed)
                 if(some_reset):
-                    obs, info = self.env.reset(None)
+                    obs, info = self.pure_env.reset(None)
                     reward, done, trimmed = [self.no_reward, False, False]
                     for alg in self.alg_collection:
                         alg['env'].feedNextStep(obs[alg['obs_index']], reward[alg['reward_index']],\
                             done, trimmed, info)
                 else:
                     # Otherwise, do a normal step in real environment with action multibinary array filled actions
-                    obs, reward, done, trimmed, info = self.env.step(self.action_multibinary)
+                    obs, reward, done, trimmed, info = self.pure_env.step(self.action_multibinary)
                     for alg in self.alg_collection:
                         alg['env'].feedNextStep(obs[alg['obs_index']], reward[alg['reward_index']],\
                             done, trimmed, info)
                         
                 # Now it is time for receive step phase
                 for alg in self.alg_collection:
-                    alg.alg.stepped_learn_receive(alg['callback'])
+                    alg['alg'].stepped_learn_receive(alg['callback'])
                     
                 callback.update_locals(locals())
                 callback.on_rollout_end()
+                
+                self.learn_step_num += 1
                     
             # Stepped learn end
             for alg in self.alg_collection:

@@ -304,6 +304,8 @@ class OnPolicyAlgorithm(BaseAlgorithm):
 
             # Ignore received data, just send
             _, _, _, _ = env.step(clipped_actions)
+            
+            self.lastUsedActions = clipped_actions
 
             
     
@@ -336,7 +338,7 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         if(self.stepped_learn_rollout_steps < n_rollout_steps):
             
             # Ignore sent data, just receive
-            new_obs, rewards, dones, infos = env.step([])
+            new_obs, rewards, dones, infos = env.step(self.lastUsedActions)
 
             self.num_timesteps += env.num_envs
 

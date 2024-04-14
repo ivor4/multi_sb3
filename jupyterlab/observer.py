@@ -73,6 +73,7 @@ class Paratrooper(Env):
 
         if(info['LowestParatrooperExists']):
             targetVector = [0,-1]
+            _ccs = info['CannonAngleCosSin']
         else:
             _lp = info['LowestParatrooperPosition']
             _cp = info['CannonPosition']
@@ -126,8 +127,8 @@ class TrainAndLoggingCallback(BaseCallback):
 
 
 # Create environment. AI tells game not to render or process window events, which makes FPS higher
-real_env = Paratrooper('ai')
-real_env = Monitor(real_env, LOG_DIR)
+real_env = Paratrooper('human')
+#real_env = Monitor(real_env, LOG_DIR)
 
 # Algorithm list with deferred actions would be next:
 # 0: DQN (shot)
@@ -148,6 +149,10 @@ callback_list = [callback_0, callback_1]
 
 # Create virtual environments
 virtual_env_list = MultiSB3.createVirtualEnvironments(numAlgorithms=2, observationSpaceList=observation_list, actionSpaceList=action_space_list)
+
+# Use Monitor for them
+virtual_env_list[0] = Monitor(virtual_env_list[0], LOG_DIR)
+virtual_env_list[1] = Monitor(virtual_env_list[1], LOG_DIR)
 
 # Create algorithms, by association of its indexed virtual environment with them
 alg_0 = DQN('CnnPolicy', virtual_env_list[0], tensorboard_log=LOG_DIR)
