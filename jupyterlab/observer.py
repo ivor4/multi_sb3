@@ -155,10 +155,10 @@ virtual_env_list[0] = Monitor(virtual_env_list[0], LOG_DIR)
 virtual_env_list[1] = Monitor(virtual_env_list[1], LOG_DIR)
 
 # Create algorithms, by association of its indexed virtual environment with them
-alg_0 = DQN('CnnPolicy', virtual_env_list[0], tensorboard_log=LOG_DIR)
-alg_1 = PPO('CnnPolicy', virtual_env_list[1], tensorboard_log=LOG_DIR)
-#alg_0 = DQN.load(os.path.join(OPT_DIR, 'best_model_DQN_x.zip'), env=env)
-#alg_1 = PPO.load(os.path.join(OPT_DIR, 'best_model_PPO_x.zip'), env=env)
+#alg_0 = DQN('CnnPolicy', virtual_env_list[0], tensorboard_log=LOG_DIR)
+#alg_1 = PPO('CnnPolicy', virtual_env_list[1], tensorboard_log=LOG_DIR)
+alg_0 = DQN.load(os.path.join(OPT_DIR, 'best_model_DQN_100000.zip'), env=virtual_env_list[0], tensorboard_log=LOG_DIR)
+alg_1 = PPO.load(os.path.join(OPT_DIR, 'best_model_PPO_100000.zip'), env=virtual_env_list[1], tensorboard_log=LOG_DIR)
 
 # Dictionary for DQN will specify DQN model itself, and obs_index 0 to pick first element from real environment return
 alg_collection_0 = {}
@@ -188,5 +188,5 @@ model = MultiSB3(real_env, alg_collection, virtual_env_list)
 observable_inst = pickle_skip.PickleSkipper(model)
 observable1 = observable_inst.Update()
 
-model.learn(total_timesteps=10000, callback_alg=callback_list)
+model.learn(total_timesteps=100000, callback_alg=callback_list)
 #env.close()
