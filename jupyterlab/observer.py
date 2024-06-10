@@ -68,23 +68,34 @@ class Paratrooper(Env):
 
         reward = [0,0]
 
-        reward[0] = info['ElapsedTime'] - self.LastElapsedTime
-        reward[0] += (info['DestroyedParatroopers'] - self.LastDestroyedParatroopers) * 10
+        #reward[0] = info['ElapsedTime'] - self.LastElapsedTime
+        reward[0] = (info['DestroyedParatroopers'] - self.LastDestroyedParatroopers) * 10
 
-        if(info['LowestParatrooperExists']):
-            targetVector = [0,-1]
+        if(not info['LowestParatrooperExists']):
+            targetVector = [0,0]
             _ccs = info['CannonAngleCosSin']
         else:
             _lp = info['LowestParatrooperPosition']
             _cp = info['CannonPosition']
             _ccs = info['CannonAngleCosSin']
-            targetVector = [_lp[0] - _cp[0], _lp[1] - _cp[0]]
+            targetVector = [_lp[0] - _cp[0], _cp[1] - _lp[1]]
+            
+            targetVectorModule = math.sqrt(targetVector[0]*targetVector[0] + targetVector[1]*targetVector[1])
+            
+            if(targetVectorModule != 0.0):
+                targetVector[0] /= targetVectorModule
+                targetVector[1] /= targetVectorModule
+            
+            #print('Target vector: '+ str(targetVector))
 
             #If paratrooper is lower than cannon, its impossible to reach
-            if(targetVector[1] > 0):
+            if(targetVector[1] < 0):
                 targetVector[1] = 0
 
+        #print('Cannon cos sin: '+ str(_ccs))
         _dotproduct = _ccs[0] * targetVector[0] + _ccs[1] * targetVector[1]
+        #print('Dot product: '+ str(_dotproduct))
+        
             
         reward[1] = _dotproduct
 
@@ -157,8 +168,8 @@ virtual_env_list[1] = Monitor(virtual_env_list[1], LOG_DIR)
 # Create algorithms, by association of its indexed virtual environment with them
 #alg_0 = DQN('CnnPolicy', virtual_env_list[0], tensorboard_log=LOG_DIR)
 #alg_1 = PPO('CnnPolicy', virtual_env_list[1], tensorboard_log=LOG_DIR)
-alg_0 = DQN.load(os.path.join(OPT_DIR, 'best_model_DQN_60000.zip'), env=virtual_env_list[0], tensorboard_log=LOG_DIR)
-alg_1 = PPO.load(os.path.join(OPT_DIR, 'best_model_PPO_60000.zip'), env=virtual_env_list[1], tensorboard_log=LOG_DIR)
+alg_0 = DQN.load(os.path.join(OPT_DIR, 'best_model_DQN_200000.zip'), env=virtual_env_list[0], tensorboard_log=LOG_DIR)
+alg_1 = PPO.load(os.path.join(OPT_DIR, 'best_model_PPO_200000.zip'), env=virtual_env_list[1], tensorboard_log=LOG_DIR)
 
 # Dictionary for DQN will specify DQN model itself, and obs_index 0 to pick first element from real environment return
 alg_collection_0 = {}
@@ -188,7 +199,7 @@ model = MultiSB3(real_env, alg_collection, virtual_env_list)
 #observable_inst = pickle_skip.PickleSkipper(model)
 #observable1 = observable_inst.Update()
 
-#model.learn(total_timesteps=100000, callback_alg=callback_list)
+#model.learn(total_timesteps=200000, callback_alg=callback_list)
 
 model.evaluate_multipolicy(render=True, n_eval_episodes=15)
 
