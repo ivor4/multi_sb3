@@ -360,7 +360,7 @@ class MultiSB3(BaseAlgorithm):
                     if(alg['discrete']):
                         for action_i in alg['action_indexes_range']:
                             action_n = alg['action_indexes'][action_i]
-                            self.action_multibinary[action_n] = (actions == (1 << action_i))
+                            self.action_multibinary[action_n] = (actions == action_i)
                     else:
                         for action_i in alg['action_indexes_range']:
                             action_n = alg['action_indexes'][action_i]

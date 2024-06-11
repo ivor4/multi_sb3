@@ -1,5 +1,5 @@
 import multigamepy
-import paratroopergame
+import crosshairgame
 import math
 # Import environment base class for a wrapper 
 from gymnasium import Env 
@@ -30,32 +30,26 @@ OPT_DIR = './models/'
 MULTIGAME = multigamepy.MultiGameManager()
 
 
-class Paratrooper(Env): 
+class Crosshair(Env): 
     def __init__(self, render_mode = 'human'):
         super().__init__()
         
         # Startup and instance of the game 
-        self.game = paratroopergame.GameSystem('Paratrooper game', paratroopergame.GAME_MODE_EXT_ACTION, render_mode)
+        self.game = crosshairgame.GameSystem('Crosshair game', crosshairgame.GAME_MODE_EXT_ACTION, render_mode)
 
         # Specify action space and observation space
         self.render_mode = render_mode
         self.observation_space = Box(low=0, high=255, shape=(45, 80, 1), dtype=np.uint8)
-        self.action_space = MultiBinary(3)
+        #self.observation_space = Box(low=0, high=255, shape=(90, 160, 1), dtype=np.uint8)
+        self.action_space = MultiBinary(4)
     
     def reset(self, seed = 0):       
         super().reset(seed=seed)
         # Return the first frame 
-        obs = self.game.reset(seed)
+        obs, info = self.game.reset(seed)
         obs = [obs]
 
-        info = {}
-
-        info['none'] = 0
-
-        self.LastElapsedTime = 0
-        self.LastDestroyedParatroopers = 0
-        self.LastMissedBullets = 0
-        self.LastEscapedParatroopers = 0
+        self.LastInsideTime = 0
         
         return obs, info
     
@@ -67,43 +61,14 @@ class Paratrooper(Env):
         obs = [obs]
 
         reward = [0,0]
-
-        #reward[0] = info['ElapsedTime'] - self.LastElapsedTime
-        reward[0] = (info['DestroyedParatroopers'] - self.LastDestroyedParatroopers) * 10
-
-        if(not info['LowestParatrooperExists']):
-            targetVector = [0,1]
-            _ccs = info['CannonAngleCosSin']
-        else:
-            _lp = info['LowestParatrooperPosition']
-            _cp = info['CannonPosition']
-            _ccs = info['CannonAngleCosSin']
-            targetVector = [_lp[0] - _cp[0], _cp[1] - _lp[1]]
-            
-            targetVectorModule = math.sqrt(targetVector[0]*targetVector[0] + targetVector[1]*targetVector[1])
-            
-            if(targetVectorModule != 0.0):
-                targetVector[0] /= targetVectorModule
-                targetVector[1] /= targetVectorModule
-            
-            #print('Target vector: '+ str(targetVector))
-
-            #If paratrooper is lower than cannon, its impossible to reach
-            if(targetVector[1] < 0):
-                targetVector[1] = 0
-
-        #print('Cannon cos sin: '+ str(_ccs))
-        _dotproduct = _ccs[0] * targetVector[0] + _ccs[1] * targetVector[1]
-        #print('Dot product: '+ str(_dotproduct))
         
-            
-        reward[1] = _dotproduct
-
-
-        self.LastElapsedTime = info['ElapsedTime']
-        self.LastDestroyedParatroopers = info['DestroyedParatroopers']
-        self.LastMissedBullets = info['MissedBullets']
-        self.LastEscapedParatroopers = info['EscapedParatroopers']
+        reward[0] = (64 - abs(info['DeltaPosition'][1]))/10.0
+        reward[1] = (64 - abs(info['DeltaPosition'][0]))/10.0
+        
+        reward[0] += info['InsideTime'] - self.LastInsideTime
+        reward[1] += info['InsideTime'] - self.LastInsideTime
+        
+        self.LastInsideTime = info['InsideTime']
         
         return obs, reward, done, trimmed, info
     
@@ -138,7 +103,7 @@ class TrainAndLoggingCallback(BaseCallback):
 
 
 # Create environment. AI tells game not to render or process window events, which makes FPS higher
-real_env = Paratrooper('human')
+real_env = Crosshair('human')
 #real_env = Monitor(real_env, LOG_DIR)
 
 # Algorithm list with deferred actions would be next:
@@ -147,8 +112,8 @@ real_env = Paratrooper('human')
 observation_list = []
 action_space_list = []
 
-action_space_list.append(Discrete(2)) # DQN (DON'T SHOT, Action SHOT), DQN can only cope with Discrete Spaces
-action_space_list.append(MultiBinary(2)) # PPO (Action Right, Left)
+action_space_list.append(Discrete(3)) # DQN (Up, Down, don't move), DQN can only cope with Discrete Spaces
+action_space_list.append(Discrete(3)) # PPO (Action Right, Left, don't move)
 observation_list.append(real_env.observation_space) # DQN will observe element 0 of obs return
 observation_list.append(real_env.observation_space) # PPO will observe element 0 of obs return (Same as DQN)
 
@@ -166,10 +131,10 @@ virtual_env_list[0] = Monitor(virtual_env_list[0], LOG_DIR)
 virtual_env_list[1] = Monitor(virtual_env_list[1], LOG_DIR)
 
 # Create algorithms, by association of its indexed virtual environment with them
-#alg_0 = DQN('CnnPolicy', virtual_env_list[0], tensorboard_log=LOG_DIR)
-#alg_1 = PPO('CnnPolicy', virtual_env_list[1], tensorboard_log=LOG_DIR)
-alg_0 = DQN.load(os.path.join(OPT_DIR, 'best_model_DQN_240000.zip'), env=virtual_env_list[0], tensorboard_log=LOG_DIR)
-alg_1 = PPO.load(os.path.join(OPT_DIR, 'best_model_PPO_240000.zip'), env=virtual_env_list[1], tensorboard_log=LOG_DIR)
+#alg_0 = PPO('MlpPolicy', virtual_env_list[0], tensorboard_log=LOG_DIR, n_steps=64)
+#alg_1 = PPO('MlpPolicy', virtual_env_list[1], tensorboard_log=LOG_DIR, n_steps=64)
+alg_0 = PPO.load(os.path.join(OPT_DIR, 'best_model_DQN_200000.zip'), env=virtual_env_list[0], tensorboard_log=LOG_DIR)
+alg_1 = PPO.load(os.path.join(OPT_DIR, 'best_model_PPO_200000.zip'), env=virtual_env_list[1], tensorboard_log=LOG_DIR)
 
 # Dictionary for DQN will specify DQN model itself, and obs_index 0 to pick first element from real environment return
 alg_collection_0 = {}
@@ -177,7 +142,7 @@ alg_collection_0['alg'] = alg_0
 alg_collection_0['env'] = virtual_env_list[0]
 alg_collection_0['obs_index'] = 0
 alg_collection_0['reward_index'] = 0
-alg_collection_0['action_indexes'] = [0]
+alg_collection_0['action_indexes'] = [0,1]
 alg_collection_0['action_space'] = action_space_list[0]
 
 # Dictionary for PPO will specify PPO model itself, and obs_index 0 to pick first element from real environment return
@@ -186,7 +151,7 @@ alg_collection_1['alg'] = alg_1
 alg_collection_1['env'] = virtual_env_list[1]
 alg_collection_1['obs_index'] = 0
 alg_collection_1['reward_index'] = 1
-alg_collection_1['action_indexes'] = [1,2]
+alg_collection_1['action_indexes'] = [2,3]
 alg_collection_1['action_space'] = action_space_list[1]
 
 alg_collection = [alg_collection_0, alg_collection_1]
@@ -196,10 +161,22 @@ alg_collection = [alg_collection_0, alg_collection_1]
 # Create MultiAlgorithm, this one is in contact with real environment and deffers actions and observation to virtual environments
 model = MultiSB3(real_env, alg_collection, virtual_env_list)
 
+
+count = 0
+
+
+if(False):
+    while(True):
+        retVal, _, _, _, _ = real_env.step(None)
+        real_env.render()
+        count += 1
+        if((count % 60) == 0 or True):
+            pass
+
 #observable_inst = pickle_skip.PickleSkipper(model)
 #observable1 = observable_inst.Update()
 
-#model.learn(total_timesteps=300000, callback_alg=callback_list)
+#model.learn(total_timesteps=200000, callback_alg=callback_list)
 
 model.evaluate_multipolicy(render=True, n_eval_episodes=15)
 
