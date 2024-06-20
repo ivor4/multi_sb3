@@ -5,6 +5,71 @@ Usage will be based on defer actions, observation space and rewards between its 
 It is thought for projects which may rely on different strategies for different actions with a focused training.
 
 
+USAGE example:
+
+# Create environment. AI tells game not to render or process window events, which makes FPS higher
+
+# This environment must send observation space (or multiple) inside a list. Therefore, every algorithm will pick from taht list its observation_index
+# Also this environment will send a reward list. Every reward index will go for its corresponding algorithm
+real_env = Game_Gym_Env()
+
+# Algorithm list with deferred actions would be next:
+# 0: DQN (shot)
+# 1: PPO (aim)
+observation_list = []
+action_space_list = []
+
+action_space_list.append(Discrete(3)) # DQN (Up, Down, don't move), DQN can only cope with Discrete Spaces
+action_space_list.append(Discrete(3)) # PPO (Action Right, Left, don't move)
+observation_list.append(real_env.observation_space) # DQN will observe element 0 of obs return
+observation_list.append(real_env.observation_space) # PPO will observe element 0 of obs return (Same as DQN)
+
+# Every algorithm can take its own periodicity to save model
+callback_0 = TrainAndLoggingCallback(check_freq=20000, save_path=OPT_DIR, algo_name='DQN')
+callback_1 = TrainAndLoggingCallback(check_freq=20000, save_path=OPT_DIR, algo_name='PPO')
+
+callback_list = [callback_0, callback_1]
+
+# Create virtual environments
+virtual_env_list = MultiSB3.createVirtualEnvironments(numAlgorithms=2, observationSpaceList=observation_list, actionSpaceList=action_space_list)
+
+# Use Monitor for them
+virtual_env_list[0] = Monitor(virtual_env_list[0], LOG_DIR)
+virtual_env_list[1] = Monitor(virtual_env_list[1], LOG_DIR)
+
+# Create algorithms, by association of its indexed virtual environment with them
+alg_0 = DQN('MlpPolicy', virtual_env_list[0], tensorboard_log=LOG_DIR, n_steps=64)
+alg_1 = PPO('MlpPolicy', virtual_env_list[1], tensorboard_log=LOG_DIR, n_steps=64)
+
+
+# Dictionary for DQN will specify DQN model itself, and obs_index 0 to pick first element from real environment return
+alg_collection_0 = {}
+alg_collection_0['alg'] = alg_0
+alg_collection_0['env'] = virtual_env_list[0]
+alg_collection_0['obs_index'] = 0
+alg_collection_0['reward_index'] = 0
+alg_collection_0['action_indexes'] = [0,1]
+alg_collection_0['action_space'] = action_space_list[0]
+
+# Dictionary for PPO will specify PPO model itself, and obs_index 0 to pick first element from real environment return
+alg_collection_1 = {}
+alg_collection_1['alg'] = alg_1
+alg_collection_1['env'] = virtual_env_list[1]
+alg_collection_1['obs_index'] = 0
+alg_collection_1['reward_index'] = 1
+alg_collection_1['action_indexes'] = [2,3]
+alg_collection_1['action_space'] = action_space_list[1]
+
+alg_collection = [alg_collection_0, alg_collection_1]
+
+
+
+# Create MultiAlgorithm, this one is in contact with real environment and deffers actions and observation to virtual environments
+model = MultiSB3(real_env, alg_collection, virtual_env_list)
+
+
+#model.learn(total_timesteps=200000, callback_alg=callback_list)
+
 
 
 #--- FORKED REPO (Stable Baselines3), original README.MD from stable-baselines3 ---
